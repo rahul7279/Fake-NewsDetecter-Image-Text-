@@ -37,7 +37,7 @@ An advanced, multi-modal fact-checking agent designed to combat misinformation b
 1.  **Clone the repository:**
     ```bash
     git clone [https://github.com/rahul7279/Fake-NewsDetecter-Image-Text-.git](https://github.com/rahul7279/Fake-NewsDetecter-Image-Text-.git)
-    cd YOUR_REPOSITORY_NAME
+    cd Fake-NewsDetecter-Image-Text-
     ```
 2.  **Set up your Environment Variable:**
     This project requires a Google AI API Key. Set it as an environment variable named `GOOGLE_API_KEY`.
