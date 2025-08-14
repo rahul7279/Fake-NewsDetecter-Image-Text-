@@ -54,4 +54,4 @@ An advanced, multi-modal fact-checking agent designed to combat misinformation b
 
 ## 🎬 Demo
 
-*(Yahan aap apne project ka banaya hua demo GIF ya video daal sakte hain)*
+![Image](https://github.com/user-attachments/assets/89974ecb-be0f-4cab-9dbd-e28b76dd95da)
