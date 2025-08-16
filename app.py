@@ -28,31 +28,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module='bs4')
 # --- Custom CSS ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
-    
-    html, body, [class*="st-"], [class*="css-"] {
-        font-family: 'Roboto', sans-serif !important;
-    }
-    .stApp { background-color: #121212; }
-    [data-testid="stChatMessage"] { 
-        background-color: #282828; 
-        border-radius: 12px; 
-        border: 1px solid #404040; 
-        box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-        width: 95%;
-        margin-left: auto;
-        margin-right: auto;
-    }
-    [data-testid="stHeader"] { background-color: transparent; }
-    h1 { 
-        font-weight: 700; 
-        color: #FFFFFF; 
-        text-align: center; 
-        padding-bottom: 10px; 
-    }
-    [data-testid="stFileUploader"] { padding: 0; margin-top: 1rem; }
-    [data-testid="stFileUploader"] section { padding: 0.5rem; background-color: #282828; }
-    [data-testid="stFileUploader"] label { display: none; }
+    /* [Your CSS code here - no changes needed] */
 </style>
 """, unsafe_allow_html=True)
 
