@@ -142,9 +142,9 @@ def apply_theme_strict(dark: bool = True):
       a, a:visited {{ color: {text_color} !important; text-decoration: underline; }}
       h1, h2, h3, h4, h5, h6 {{ color: {text_color} !important; }}
 
-      /* Hide Streamlit default footer/menu if present */
-      [data-testid="stToolbar"] {{ visibility: hidden !important; }}
-      footer {{ visibility: hidden !important; }}
+#      /* Hide Streamlit default footer/menu if present */
+#      [data-testid="stToolbar"] {{ visibility: hidden !important; }}
+#      footer {{ visibility: hidden !important; }}
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
@@ -254,11 +254,10 @@ fact_checking_agent = Agent(
 You are a sophisticated, multi-faceted AI analysis agent with memory. Always consider conversation history. Your goal is not just to verify facts, but to provide deep, nuanced understanding.
 
 **Crucial Rule: Language Protocol**
-You MUST detect the language of the user's query. Your entire final response must be in the same language(If the user giving input hinglish give responce in hingish that is written in english (readable in as hinglish)).
+You MUST detect the language of the user's query. Your entire final response must be in the same language(Always consider Hinglish if user gives input in Hinglish).
 - If the query is in English, respond in English.
 - **If the query is in Hinglish, you MUST respond in natural, conversational Hinglish. Do not use pure, formal Hindi. Mix English words naturally.**
   - **Good Hinglish Example:** "Analysis ke mutabik, yeh claim misleading hai. Is image mein Nitish Kumar nahi hain."
-  - **Bad Hindi Example:** "विश्लेषण के अनुसार, यह दावा भ्रामक है। इस चित्र में नीतीश कुमार नहीं हैं।"
 
 **Core Task: Deep Analysis**
 Use the `Google Search` tool to investigate the user's claim. Your analysis MUST include these three sections:
@@ -331,9 +330,8 @@ async def get_fact_check_response(text_content, image_content, fact_check_sessio
         )
 
     final_query = f"""
-    Please fact-check the following user claim based on the provided context.
-    **User's Claim:** "{text_content}"
-    **Context from Associated Image:** "{image_description}"
+    **User's Claim/Query:** "{text_content}"
+    **Associated Context (if any):** "{image_description}"
     """
     final_report = await run_agent_query(
         agent=fact_checking_agent,
