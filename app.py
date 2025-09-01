@@ -1,4 +1,6 @@
 import streamlit as st
+import speech_recognition as sr
+from streamlit_mic_recorder import mic_recorder
 import asyncio
 import os
 import requests
@@ -14,6 +16,7 @@ from google.genai.types import Content, Part, Blob
 import warnings
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
+from pydub import AudioSegment # <-- Naya import
 
 # --------------------------
 # Page & Global Config
@@ -37,14 +40,13 @@ if "dark_mode" not in st.session_state:
 # Theme (hard-contrast variant)
 # --------------------------
 def apply_theme_strict(dark: bool = True):
-    # Backgrounds are soft; text and borders are pure black (light) or pure white (dark)
     if dark:
         bg_page = "#000000"
-        surface = "#141826"
+        surface = "#363A4C"
         text_color = "#ffffff"
-        border_color = "#ffffff"
-        toggle_outline = "#ffffff"
-        accent = "#00e5cf"
+        border_color = "#2151aa"
+        toggle_outline = "#281d9e"
+        accent = "#1de9d4"
         shadow = "0 2px 10px rgba(0,0,0,0.35)"
     else:
         bg_page = "#f0f2f6"
@@ -60,16 +62,12 @@ def apply_theme_strict(dark: bool = True):
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
       .stApp {{ background: {bg_page}; }}
       .main .block-container {{ padding-top: 1.25rem; max-width: 760px; margin: 0 auto; }}
-
-      /* ENFORCE TEXT COLOR GLOBALLY */
       html, body, .stApp, .main, .block-container, .stMarkdown, .stChatMessage,
       [data-testid="stFileUploader"], .stAlert, .stButton, .stTextInput, .stSelectbox,
       .stTextArea, .stSlider, .stRadio, label, p, h1, h2, h3, h4, h5, h6, span, div {{
         color: {text_color} !important;
         font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
       }}
-
-      /* SURFACES */
       .themed-surface, .stChatMessage, .stAlert, [data-testid="stFileUploader"] section {{
         background: {surface} !important;
         border: 1px solid {border_color} !important;
@@ -77,8 +75,6 @@ def apply_theme_strict(dark: bool = True):
         box-shadow: {shadow};
       }}
       .stChatMessage {{ margin-bottom: 1rem; padding: 1rem 1.25rem; }}
-
-      /* EXPANDER HEADER */
       details > summary {{
         background: {surface} !important;
         border: 1px solid {border_color} !important;
@@ -88,11 +84,7 @@ def apply_theme_strict(dark: bool = True):
         list-style: none;
       }}
       details > summary::-webkit-details-marker {{ display:none; }}
-
-      /* FILE UPLOADER BODY */
       [data-testid="stFileUploader"] section {{ padding: 1rem !important; }}
-
-      /* CHAT INPUT SHELL */
       div[data-testid="stChatInput"] > div:nth-child(2) {{
         background: {surface} !important;
         border: 1px solid {border_color} !important;
@@ -100,14 +92,10 @@ def apply_theme_strict(dark: bool = True):
         padding: .5rem .75rem;
         box-shadow: {shadow};
       }}
-
-      /* INPUTS / WIDGETS BORDERS */
       input, textarea, select, [role="spinbutton"], [data-baseweb="input"], [data-baseweb="select"] {{
         color: {text_color} !important;
         border-color: {border_color} !important;
       }}
-
-      /* BUTTONS (generic) */
       .stButton > button {{
         background: {accent} !important;
         color: {text_color} !important;
@@ -115,18 +103,14 @@ def apply_theme_strict(dark: bool = True):
         font-weight: 700;
         border-radius: 8px;
       }}
-
-      /* THEME TOGGLE: ensure clear outline and knob border in both modes */
       div[data-testid="stWidgetLabel"] + div [role="switch"] {{
-        outline: 2px solid {toggle_outline} !important;  /* switch container */
+        outline: 2px solid {toggle_outline} !important;
         border-radius: 999px !important;
       }}
       div[data-baseweb="switch"] > div {{
-        border: 2px solid {toggle_outline} !important;   /* knob track outline */
+        border: 2px solid {toggle_outline} !important;
         border-radius: 999px !important;
       }}
-
-      /* BROWSE FILES BUTTON inside uploader (force outline) */
       [data-testid="stFileUploader"] button,
       [data-testid="stFileUploader"] [data-baseweb="button"] {{
         border: 2px solid {border_color} !important;
@@ -135,16 +119,9 @@ def apply_theme_strict(dark: bool = True):
         font-weight: 700 !important;
         border-radius: 8px !important;
       }}
-
       .soft-divider {{ height: 1px; background: {border_color}; margin: 14px 0 10px 0; opacity: 1; }}
-
-      /* Links and headings */
       a, a:visited {{ color: {text_color} !important; text-decoration: underline; }}
       h1, h2, h3, h4, h5, h6 {{ color: {text_color} !important; }}
-
-#      /* Hide Streamlit default footer/menu if present */
-#      [data-testid="stToolbar"] {{ visibility: hidden !important; }}
-#      footer {{ visibility: hidden !important; }}
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
@@ -186,16 +163,6 @@ def scrape_webpage_content(url):
         st.warning(f"Webpage content scrape karne mein dikkat aayi: {e}")
     return scraped_text, scraped_image
 
-def download_direct_image(url):
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        return Image.open(io.BytesIO(response.content))
-    except Exception as e:
-        st.warning(f"Direct image download karne mein dikkat aayi: {e}")
-    return None
-
 def read_image_from_file(file):
     try:
         return Image.open(file)
@@ -209,9 +176,7 @@ def get_youtube_info(url):
         if not video_id_match:
             return {"error": "Invalid YouTube URL format."}
         video_id = video_id_match.group(1)
-
         video_info = {"transcript": "(Transcript not available for this video)"}
-
         oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
         try:
             response = requests.get(oembed_url, timeout=10)
@@ -222,14 +187,12 @@ def get_youtube_info(url):
         except Exception:
             video_info["title"] = "Unknown Title"
             video_info["author"] = "Unknown Channel"
-
         try:
             transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
             transcript = " ".join([item['text'] for item in transcript_list])
             video_info["transcript"] = transcript[:4000]
         except Exception:
             st.info("Is video ke liye transcript available nahi hai. Sirf metadata se analysis kiya jayega.")
-
         return video_info
     except Exception as e:
         return {"error": f"YouTube info nikalne mein dikkat aayi: {e}"}
@@ -246,18 +209,24 @@ image_vision_agent = Agent(
     )
 )
 
-# --- Agent Definitions (FINAL UPGRADE) ---
 fact_checking_agent = Agent(
     name="fact_checking_agent",
     model="gemini-1.5-flash",
     instruction=f"""
-You are a sophisticated, multi-faceted AI analysis agent with memory. Always consider conversation history. Your goal is not just to verify facts, but to provide deep, nuanced understanding.
+You are a sophisticated, multi-faceted AI analysis agent.
 
 **Crucial Rule: Language Protocol**
-You MUST detect the language of the user's query. Your entire final response must be in the same language(Always consider Hinglish if user gives input in Hinglish).
-- If the query is in English, respond in English.
-- **If the query is in Hinglish, you MUST respond in natural, conversational Hinglish. Do not use pure, formal Hindi. Mix English words naturally.**
-  - **Good Hinglish Example:** "Analysis ke mutabik, yeh claim misleading hai. Is image mein Nitish Kumar nahi hain."
+This is your most important rule. You MUST STRICTLY follow the user's input language.
+
+1.  **Detect the user's language.** Pay close attention to common Hindi words in Latin script like 'hai', 'kya', 'me', 'ki', 'ka', 'ye', 'woh', 'nahi'. The presence of even one such word means the user's language is **Hinglish**.
+2.  **Write your ENTIRE response in the detected language.**
+
+-   **If the input is clearly 100% English:** The ENTIRE output MUST be in English.
+-   **If the input is Hinglish:** The ENTIRE output MUST be in conversational Hinglish (using the Latin/Roman script).
+    -   **GOOD Hinglish Example:** "Analysis ke mutabik, yeh claim misleading hai."
+    -   **BAD Hindi Example (DO NOT USE THIS STYLE):** "विश्लेषण के अनुसार, यह दावा भ्रामक है।"
+
+**Default Behavior:** If the query is a mix of languages or you are unsure, **assume it is Hinglish** and respond in conversational Hinglish. Do not default to English.
 
 **Core Task: Deep Analysis**
 Use the `Google Search` tool to investigate the user's claim. Your analysis MUST include these three sections:
@@ -318,7 +287,6 @@ async def get_fact_check_response(text_content, image_content, fact_check_sessio
         image_content.save(img_byte_arr, format='JPEG')
         image_bytes = img_byte_arr.getvalue()
         image_part = Part(inline_data=Blob(data=image_bytes, mime_type='image/jpeg'))
-
         vision_session = await st.session_state.session_service.create_session(
             app_name=image_vision_agent.name, user_id="streamlit_user_001"
         )
@@ -328,7 +296,6 @@ async def get_fact_check_response(text_content, image_content, fact_check_sessio
             query_parts=image_query_parts,
             session_id=vision_session.id
         )
-
     final_query = f"""
     **User's Claim/Query:** "{text_content}"
     **Associated Context (if any):** "{image_description}"
@@ -366,34 +333,24 @@ def init_session():
 # UI
 # --------------------------
 def main():
-    # Header with visible toggle
     col1, col2 = st.columns([7, 1])
     with col1:
         st.title("🤖 AI Fact-Checker")
-        # Removed the extra caption line for a cleaner look
     with col2:
         st.session_state.dark_mode = st.toggle("Dark", value=st.session_state.dark_mode, key="theme_toggle")
-
-    # Apply strict theme
+    
     apply_theme_strict(st.session_state.dark_mode)
-
     init_session()
 
-    # Removed the friendly callout line for a cleaner homepage
-
-    # Chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if "image" in message and message["image"] is not None:
                 st.image(message["image"], caption="Image being analyzed.", use_column_width=True)
 
-    # Upload section
     with st.expander("Upload an image or paste a URL", expanded=True):
         uploaded_image_file = st.file_uploader("", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
-        # Removed the footer-like caption under uploader as part of cleanup
-        # st.caption("Or paste a direct image URL below.")
-
+    
     if uploaded_image_file:
         st.session_state.uploaded_image = read_image_from_file(uploaded_image_file)
         with st.chat_message("assistant"):
@@ -408,9 +365,46 @@ def main():
             "image": st.session_state.uploaded_image
         })
 
-    # Chat input
+    # --- VOICE AND TEXT INPUT SECTION (UPDATED) ---
+    st.markdown("##### Ya, bolkar input dein:")
+    audio_info = mic_recorder(
+        start_prompt="🎤 Start Recording",
+        stop_prompt="⏹️ Stop Recording",
+        just_once=True,
+        key='my_mic_recorder'
+    )
+
+    recognized_text = None
+    if audio_info:
+        audio_bytes = audio_info['bytes']
+        try:
+            # Convert browser audio (WebM/Ogg) to WAV using pydub
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
+            wav_bytes_io = io.BytesIO()
+            audio_segment.export(wav_bytes_io, format="wav")
+            wav_bytes_io.seek(0)
+            
+            # Recognize the WAV audio
+            r = sr.Recognizer()
+            with sr.AudioFile(wav_bytes_io) as source:
+                audio_data = r.record(source)
+            st.info("Aapki aawaz ko process kiya ja raha hai...")
+            recognized_text = r.recognize_google(audio_data, language="en-IN")
+            st.success(f"Recognized Text: {recognized_text}")
+
+        except sr.UnknownValueError:
+            st.warning("Sorry, main aapki aawaz samajh nahi paya.")
+        except Exception as e:
+            st.error(f"Audio process karne mein error aaya: {e}")
+
+    # SINGLE Chat input for text
     prompt = st.chat_input("URL, text claim, ya image ke baare mein sawaal yahan likhein...")
 
+    # Use recognized_text if it exists
+    if recognized_text:
+        prompt = recognized_text
+
+    # --- PROCESSING LOGIC (ORIGINAL LOGIC) ---
     if prompt:
         image_to_process = st.session_state.get("uploaded_image", None)
         st.session_state.messages.append({"role": "user", "content": prompt, "image": image_to_process})
@@ -454,8 +448,6 @@ def main():
 
                 if "uploaded_image" in st.session_state:
                     st.session_state.uploaded_image = None
-
-    # Removed the custom footer line for a cleaner look
 
 if __name__ == "__main__":
     main()
