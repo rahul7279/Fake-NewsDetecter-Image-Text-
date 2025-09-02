@@ -321,7 +321,6 @@ async def get_fact_check_response(text_content, image_content, fact_check_sessio
     # --- Language Detection Logic (IMPROVED) ---
     detected_lang = 'en' # Default to English
     
-    # Expanded keyword list for much better Hinglish detection
     hinglish_keywords = [
         'hai', 'kya', 'me', 'ki', 'ka', 'tha', 'aaj', 'kyun', 'kab', 'kaise', 'hoon', 
         'hota', 'hui', 'hua', 'kar', 'raha', 'rahi', 'rahe', 'sath', 'uske', 'iske', 
@@ -330,17 +329,13 @@ async def get_fact_check_response(text_content, image_content, fact_check_sessio
     
     try:
         user_words = set(text_content.lower().split())
-        # The keyword check is more reliable for conversational Hinglish
         if any(word in user_words for word in hinglish_keywords):
-            detected_lang = 'hi' # Treat as Hinglish
-        # Fallback to langdetect only if no keywords are found
+            detected_lang = 'hi'
         elif detect(text_content) == 'hi':
              detected_lang = 'hi'
-    except (LangDetectException, NameError): # Catch potential errors
-        # If detection fails, it's likely English or a short query
+    except (LangDetectException, NameError):
         detected_lang = 'en'
     
-    # Set the instructions for the agent based on detected language
     if detected_lang == 'hi':
         fact_checking_agent.instruction = HINGLISH_INSTRUCTIONS
     else:
@@ -392,15 +387,95 @@ def main():
     apply_theme_strict(st.session_state.dark_mode)
     init_session()
 
+    # Chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if "image" in message and message["image"] is not None:
                 st.image(message["image"], caption="Image being analyzed.", use_column_width=True)
 
-    with st.expander("Upload an image or paste a URL", expanded=True):
-        uploaded_image_file = st.file_uploader("", type=['jpg', 'jpeg', 'png'], label_visibility="collapsed")
+    # --- FINAL MODERN UI AT THE BOTTOM ---
+
+    # Final CSS block to style both buttons to look clean and identical
+    st.markdown("""
+        <style>
+            .button-container {
+                display: flex;
+                flex-direction: row;
+                justify-content: flex-start;
+                align-items: center;
+                margin-bottom: -1.5rem;
+                gap: 0.5rem;
+            }
+
+            /* --- Style the file uploader button --- */
+            [data-testid="stFileUploader"] { width: auto; }
+            [data-testid="stFileUploader"] section { padding: 0 !important; border: none !important; background: none !important; }
+            [data-testid="stFileUploaderDropzoneInstructions"] { display: none; }
+            [data-testid="stFileUploader"] button {
+                color: transparent !important;
+                position: relative;
+                width: 170px !important; /* <-- UPDATED WIDTH */
+                transition: all 0.2s ease-in-out;
+            }
+            [data-testid="stFileUploader"] button::after {
+                content: "Browse Image";
+                color: white !important;
+                position: absolute;
+                left: 0; right: 0; top: 50%;
+                transform: translateY(-50%);
+            }
+            [data-testid="stFileUploader"] button:hover {
+                border-color: #1de9d4 !important;
+                box-shadow: 0 0 10px 2px #1de9d4;
+            }
+
+            /* --- Clean the Mic Recorder Button --- */
+            div[data-testid="stVerticalBlock"] div.st-emotion-cache-1vo6xi6.st-key-my_mic_recorder {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 0;
+                margin: 0;
+                width: 170px !important; /* <-- UPDATED WIDTH TO MATCH */
+            }
+            div.st-emotion-cache-1vo6xi6.st-key-my_mic_recorder > div {
+                border: none !important;
+                background: transparent !important;
+                box-shadow: none !important;
+            }
+            div.st-emotion-cache-1vo6xi6.st-key-my_mic_recorder iframe {
+                border: 2px solid #2151aa !important;
+                border-radius: 8px !important;
+                transition: all 0.2s ease-in-out;
+            }
+            div.st-emotion-cache-1vo6xi6.st-key-my_mic_recorder:hover iframe {
+                border-color: #1de9d4 !important;
+                box-shadow: 0 0 10px 2px #1de9d4;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Use a custom div container for the buttons
+    st.markdown('<div class="button-container">', unsafe_allow_html=True)
     
+    uploaded_image_file = st.file_uploader(
+        "Upload an image", 
+        type=['jpg', 'jpeg', 'png'], 
+        label_visibility="collapsed"
+    )
+    
+    audio_info = mic_recorder(
+        start_prompt="🎤 Start Recording",
+        stop_prompt="⏹️ Stop Recording",
+        just_once=True,
+        key='my_mic_recorder'
+    )
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+    # This logic handles the uploaded file from the new button
     if uploaded_image_file:
         st.session_state.uploaded_image = read_image_from_file(uploaded_image_file)
         with st.chat_message("assistant"):
@@ -415,15 +490,7 @@ def main():
             "image": st.session_state.uploaded_image
         })
 
-    # --- VOICE AND TEXT INPUT SECTION ---
-    st.markdown("##### Ya, bolkar input dein:")
-    audio_info = mic_recorder(
-        start_prompt="🎤 Start Recording",
-        stop_prompt="⏹️ Stop Recording",
-        just_once=True,
-        key='my_mic_recorder'
-    )
-
+    # --- VOICE AND TEXT INPUT LOGIC ---
     recognized_text = None
     if audio_info:
         audio_bytes = audio_info['bytes']
