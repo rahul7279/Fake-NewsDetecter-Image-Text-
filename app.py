@@ -16,7 +16,12 @@ from google.genai.types import Content, Part, Blob
 import warnings
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
-from pydub import AudioSegment # <-- Naya import
+from pydub import AudioSegment
+from langdetect import detect, DetectorFactory
+from langdetect.lang_detect_exception import LangDetectException
+
+# Ensure consistent detection results
+DetectorFactory.seed = 0
 
 # --------------------------
 # Page & Global Config
@@ -198,52 +203,25 @@ def get_youtube_info(url):
         return {"error": f"YouTube info nikalne mein dikkat aayi: {e}"}
 
 # --------------------------
-# Agents
+# Agents - PERMANENT SOLUTION
 # --------------------------
-image_vision_agent = Agent(
-    name="image_vision_agent",
-    model="gemini-1.5-flash",
-    instruction=(
-        "You are an expert image analyst. Describe the provided image in detail. "
-        "If you recognize any public figures, state their names. Be concise and factual. Do not use any tools."
-    )
-)
 
-fact_checking_agent = Agent(
-    name="fact_checking_agent",
-    model="gemini-1.5-flash",
-    instruction=f"""
-You are a sophisticated, multi-faceted AI analysis agent.
-
-**Crucial Rule: Language Protocol**
-This is your most important rule. You MUST STRICTLY follow the user's input language.
-
-1.  **Detect the user's language.** Pay close attention to common Hindi words in Latin script like 'hai', 'kya', 'me', 'ki', 'ka', 'ye', 'woh', 'nahi'. The presence of even one such word means the user's language is **Hinglish**.
-2.  **Write your ENTIRE response in the detected language.**
-
--   **If the input is clearly 100% English:** The ENTIRE output MUST be in English.
--   **If the input is Hinglish:** The ENTIRE output MUST be in conversational Hinglish (using the Latin/Roman script).
-    -   **GOOD Hinglish Example:** "Analysis ke mutabik, yeh claim misleading hai."
-    -   **BAD Hindi Example (DO NOT USE THIS STYLE):** "विश्लेषण के अनुसार, यह दावा भ्रामक है।"
-
-**Default Behavior:** If the query is a mix of languages or you are unsure, **assume it is Hinglish** and respond in conversational Hinglish. Do not default to English.
+ENGLISH_INSTRUCTIONS = f"""
+You are a sophisticated, multi-faceted AI analysis agent. Your goal is to provide deep, nuanced understanding.
+You MUST respond entirely in English.
 
 **Core Task: Deep Analysis**
 Use the `Google Search` tool to investigate the user's claim. Your analysis MUST include these three sections:
-
 1.  **Fact-Check Analysis:**
-    - Provide a primary verdict: [Credible / Misleading / Fake / Unverified] or [Bharosemand / Bhramak / Jhooth / Asatyaapit].
+    - Provide a primary verdict: [Credible / Misleading / Fake / Unverified].
     - Give detailed reasoning for your verdict, referencing the strongest sources you found.
-
 2.  **Propaganda & Bias Analysis:**
     - Scrutinize the language of the source.
     - Explicitly identify any propaganda techniques used (e.g., Loaded Language, Ad Hominem, Fear Appeals).
-    - Provide examples from the text if possible. If no bias is found, state that the language appears neutral.
-
+    - If no bias is found, state that the language appears neutral.
 3.  **Broader Context & Counter-Arguments:**
     - Provide brief historical or political context for the claim.
-    - Use your search tool to find the most common counter-arguments or opposing viewpoints.
-    - Present these counter-arguments neutrally.
+    - Use your search tool to find the most common counter-arguments or opposing viewpoints and present them neutrally.
 
 **Output Format (Strict):**
 **Overall Verdict:** [Your primary verdict]
@@ -256,7 +234,50 @@ Use the `Google Search` tool to investigate the user's claim. Your analysis MUST
 \n---\n
 **Sources:**
 - Bullet list of the strongest 3-6 URLs you actually used.
-""",
+"""
+
+HINGLISH_INSTRUCTIONS = f"""
+You are a sophisticated, multi-faceted AI analysis agent. Your goal is to provide deep, nuanced understanding.
+You MUST respond entirely in conversational Hinglish, using the Latin/Roman script. Do not use Devanagari script.
+
+**Core Task: Deep Analysis**
+Use the `Google Search` tool to investigate the user's claim. Your analysis MUST include these three sections:
+1.  **Fact-Check Analysis:**
+    - Provide a primary verdict: [Bharosemand / Bhramak / Jhooth / Asatyaapit].
+    - Give detailed reasoning for your verdict, referencing the strongest sources you found.
+2.  **Propaganda & Bias Analysis:**
+    - Scrutinize the language of the source.
+    - Explicitly identify any propaganda techniques used (e.g., Loaded Language, Ad Hominem, Fear Appeals).
+    - If no bias is found, state that the language appears neutral.
+3.  **Broader Context & Counter-Arguments:**
+    - Provide brief historical or political context for the claim.
+    - Use your search tool to find the most common counter-arguments or opposing viewpoints and present them neutrally.
+
+**Output Format (Strict):**
+**Overall Verdict:** [Your primary verdict]
+\n---\n
+**Analysis:** [Your fact-checking reasoning.]
+\n---\n
+**Propaganda & Bias Scan:** [Your analysis of manipulative language.]
+\n---\n
+**Broader Context:** [Your summary of context and counter-arguments.]
+\n---\n
+**Sources:**
+- Bullet list of the strongest 3-6 URLs you actually used.
+"""
+
+image_vision_agent = Agent(
+    name="image_vision_agent",
+    model="gemini-1.5-flash",
+    instruction=(
+        "You are an expert image analyst. Describe the provided image in detail. "
+        "If you recognize any public figures, state their names. Be concise and factual. Do not use any tools."
+    )
+)
+
+fact_checking_agent = Agent(
+    name="fact_checking_agent",
+    model="gemini-1.5-flash",
     tools=[google_search]
 )
 
@@ -296,6 +317,35 @@ async def get_fact_check_response(text_content, image_content, fact_check_sessio
             query_parts=image_query_parts,
             session_id=vision_session.id
         )
+
+    # --- Language Detection Logic (IMPROVED) ---
+    detected_lang = 'en' # Default to English
+    
+    # Expanded keyword list for much better Hinglish detection
+    hinglish_keywords = [
+        'hai', 'kya', 'me', 'ki', 'ka', 'tha', 'aaj', 'kyun', 'kab', 'kaise', 'hoon', 
+        'hota', 'hui', 'hua', 'kar', 'raha', 'rahi', 'rahe', 'sath', 'uske', 'iske', 
+        'woh', 'yeh', 'bhi', 'se', 'ko', 'k', 'v', 'nahi', 'haan', 'wala', 'wali', 'wale'
+    ]
+    
+    try:
+        user_words = set(text_content.lower().split())
+        # The keyword check is more reliable for conversational Hinglish
+        if any(word in user_words for word in hinglish_keywords):
+            detected_lang = 'hi' # Treat as Hinglish
+        # Fallback to langdetect only if no keywords are found
+        elif detect(text_content) == 'hi':
+             detected_lang = 'hi'
+    except (LangDetectException, NameError): # Catch potential errors
+        # If detection fails, it's likely English or a short query
+        detected_lang = 'en'
+    
+    # Set the instructions for the agent based on detected language
+    if detected_lang == 'hi':
+        fact_checking_agent.instruction = HINGLISH_INSTRUCTIONS
+    else:
+        fact_checking_agent.instruction = ENGLISH_INSTRUCTIONS
+
     final_query = f"""
     **User's Claim/Query:** "{text_content}"
     **Associated Context (if any):** "{image_description}"
@@ -365,7 +415,7 @@ def main():
             "image": st.session_state.uploaded_image
         })
 
-    # --- VOICE AND TEXT INPUT SECTION (UPDATED) ---
+    # --- VOICE AND TEXT INPUT SECTION ---
     st.markdown("##### Ya, bolkar input dein:")
     audio_info = mic_recorder(
         start_prompt="🎤 Start Recording",
@@ -378,33 +428,26 @@ def main():
     if audio_info:
         audio_bytes = audio_info['bytes']
         try:
-            # Convert browser audio (WebM/Ogg) to WAV using pydub
             audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
             wav_bytes_io = io.BytesIO()
             audio_segment.export(wav_bytes_io, format="wav")
             wav_bytes_io.seek(0)
-            
-            # Recognize the WAV audio
             r = sr.Recognizer()
             with sr.AudioFile(wav_bytes_io) as source:
                 audio_data = r.record(source)
             st.info("Aapki aawaz ko process kiya ja raha hai...")
             recognized_text = r.recognize_google(audio_data, language="en-IN")
             st.success(f"Recognized Text: {recognized_text}")
-
         except sr.UnknownValueError:
             st.warning("Sorry, main aapki aawaz samajh nahi paya.")
         except Exception as e:
             st.error(f"Audio process karne mein error aaya: {e}")
 
-    # SINGLE Chat input for text
     prompt = st.chat_input("URL, text claim, ya image ke baare mein sawaal yahan likhein...")
-
-    # Use recognized_text if it exists
     if recognized_text:
         prompt = recognized_text
 
-    # --- PROCESSING LOGIC (ORIGINAL LOGIC) ---
+    # --- PROCESSING LOGIC ---
     if prompt:
         image_to_process = st.session_state.get("uploaded_image", None)
         st.session_state.messages.append({"role": "user", "content": prompt, "image": image_to_process})
@@ -414,9 +457,9 @@ def main():
 
         with st.chat_message("assistant"):
             with st.spinner("Analysis in progress..."):
-                text_content, image_content = "", None
                 user_input = prompt
-
+                text_content, image_content = "", image_to_process
+                
                 if "youtube.com" in user_input.lower() or "youtu.be" in user_input.lower():
                     st.info("YouTube link detect hua, video ki jaankari nikali ja rahi hai...")
                     video_info = get_youtube_info(user_input)
@@ -429,10 +472,6 @@ def main():
                         )
                     else:
                         text_content = "YouTube video ki jaankari nahi mil saki."
-                    image_content = None
-                elif st.session_state.uploaded_image:
-                    image_content = st.session_state.uploaded_image
-                    text_content = user_input
                 else:
                     text_content = user_input
 
