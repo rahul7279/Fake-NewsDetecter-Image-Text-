@@ -14,6 +14,7 @@ from google.adk.tools import google_search
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai.types import Content, Part, Blob
+from phi.model.google import Gemini
 import warnings
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
@@ -147,7 +148,7 @@ try:
     genai.configure(api_key=api_key)
     os.environ['GOOGLE_API_KEY'] = api_key
     GENERATIVE_MODEL_NAME = "gemini-1.5-flash"
-    GENERATIVE_MODEL = genai.GenerativeModel(GENERATIVE_MODEL_NAME)
+    GENERATIVE_MODEL = Gemini(id=GENERATIVE_MODEL_NAME)
 except Exception as e:
     st.error(f"API Key configure karne mein error aaya: {e}")
     st.stop()
