@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from PIL import Image
 import io
 import google.generativeai as genai
+os.environ["GOOGLE_API_USE_MTLS"] = "never"
 from google.adk.agents import Agent
 from google.adk.tools import google_search
 from google.adk.runners import Runner
