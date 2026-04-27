@@ -5,6 +5,7 @@ requests
 beautifulsoup4
 Pillow
 google-generativeai
+phidata
 google-adk
 pytube
 youtube-transcript-api
