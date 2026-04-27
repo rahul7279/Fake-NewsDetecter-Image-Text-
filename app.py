@@ -268,7 +268,7 @@ Use the `Google Search` tool to investigate the user's claim. Your analysis MUST
 
 image_vision_agent = Agent(
     name="image_vision_agent",
-    model="gemini-pro-vision",
+    model="gemini-1.5-flash",
     instruction=(
         "You are an expert image analyst. Describe the provided image in detail. "
         "If you recognize any public figures, state their names. Be concise and factual. Do not use any tools."
@@ -277,7 +277,7 @@ image_vision_agent = Agent(
 
 fact_checking_agent = Agent(
     name="fact_checking_agent",
-    model="gemini-pro",
+    model="gemini-1.5-flash",
     tools=[google_search]
 )
 
