@@ -137,11 +137,17 @@ def apply_theme_strict(dark: bool = True):
 # --------------------------
 try:
     api_key = os.environ.get('GOOGLE_API_KEY')
+    if not api_key and "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+
     if not api_key:
-        st.error("Error: GOOGLE_API_KEY environment variable set nahi hai!")
+        st.error("Error: GOOGLE_API_KEY environment variable set nahi hai aur Streamlit secrets mein bhi nahi mila!")
         st.stop()
+
     genai.configure(api_key=api_key)
     os.environ['GOOGLE_API_KEY'] = api_key
+    GENERATIVE_MODEL_NAME = "gemini-1.5-flash"
+    GENERATIVE_MODEL = genai.GenerativeModel(GENERATIVE_MODEL_NAME)
 except Exception as e:
     st.error(f"API Key configure karne mein error aaya: {e}")
     st.stop()
@@ -269,7 +275,7 @@ Use the `Google Search` tool to investigate the user's claim. Your analysis MUST
 
 image_vision_agent = Agent(
     name="image_vision_agent",
-    model="gemini-1.5-flash",
+    model=GENERATIVE_MODEL,
     instruction=(
         "You are an expert image analyst. Describe the provided image in detail. "
         "If you recognize any public figures, state their names. Be concise and factual. Do not use any tools."
@@ -278,7 +284,7 @@ image_vision_agent = Agent(
 
 fact_checking_agent = Agent(
     name="fact_checking_agent",
-    model="gemini-1.5-flash",
+    model=GENERATIVE_MODEL,
     tools=[google_search]
 )
 
